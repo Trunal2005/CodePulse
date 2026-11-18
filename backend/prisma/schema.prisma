@@ -212,6 +212,11 @@ model Repository {
   archivedAt    DateTime?
 
   @@unique([userId, githubRepoId])
+  @@index([userId])
+  @@index([userId, language])
+  @@index([userId, stars(sort: Desc)])
+  @@index([userId, forks(sort: Desc)])
+  @@index([userId, updatedAt(sort: Desc)])
   @@map("repositories")
 }
 
@@ -243,20 +248,26 @@ model Challenge {
   createdAt   DateTime        @default(now())
   users       UserChallenge[]
 
+  @@index([expiresAt])
+  @@index([category, expiresAt])
   @@map("challenges")
 }
 
 model UserChallenge {
-  id          String    @id @default(uuid())
+  id          String          @id @default(uuid())
   userId      String
   challengeId String
-  progress    Int       @default(0)
-  isCompleted Boolean   @default(false)
+  progress    Int             @default(0)
+  isCompleted Boolean         @default(false)
+  status      ChallengeStatus @default(IN_PROGRESS)
   completedAt DateTime?
-  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  claimedAt   DateTime?
+  challenge   Challenge       @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, challengeId])
+  @@index([userId, status])
+  @@index([status])
   @@map("user_challenges")
 }
 
@@ -313,20 +324,25 @@ model UserBadge {
 }
 
 model Battle {
-  id              String       @id @default(uuid())
-  challengerId    String
-  opponentId      String
-  status          BattleStatus @default(PENDING)
-  category        String
-  challengerScore Float?
-  opponentScore   Float?
-  startedAt       DateTime     @default(now())
-  endsAt          DateTime
-  winnerId        String?
-  challenger      User         @relation("BattleChallenger", fields: [challengerId], references: [id])
-  opponent        User         @relation("BattleOpponent", fields: [opponentId], references: [id])
-  winner          User?        @relation("BattleWinner", fields: [winnerId], references: [id])
+  id                 String       @id @default(uuid())
+  challengerId       String
+  opponentId         String
+  status             BattleStatus @default(PENDING)
+  category           String
+  challengerScore    Float?
+  opponentScore      Float?
+  startedAt          DateTime     @default(now())
+  endsAt             DateTime
+  winnerId           String?
+  forfeitedById      String?
+  cancellationReason String?
+  challenger         User         @relation("BattleChallenger", fields: [challengerId], references: [id])
+  opponent           User         @relation("BattleOpponent", fields: [opponentId], references: [id])
+  winner             User?        @relation("BattleWinner", fields: [winnerId], references: [id])
 
+  @@index([status, endsAt])
+  @@index([challengerId, status])
+  @@index([opponentId, status])
   @@map("battles")
 }
 
@@ -379,6 +395,13 @@ enum ChallengeType {
   SEASONAL
 }
 
+enum ChallengeStatus {
+  IN_PROGRESS
+  COMPLETED
+  CLAIMED
+  EXPIRED
+}
+
 enum Difficulty {
   EASY
   MEDIUM
@@ -406,6 +429,8 @@ enum BattleStatus {
   ACTIVE
   COMPLETED
   CANCELLED
+  EXPIRED
+  FORFEITED
 }
 
 enum NotificationType {
