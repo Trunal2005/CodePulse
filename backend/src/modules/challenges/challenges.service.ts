@@ -1,10 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateChallengeDto } from './dto/challenges.dto';
+import { XpService } from '../xp/xp.service';
 
 @Injectable()
 export class ChallengesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly xpService?: XpService,
+  ) {}
 
   async getActiveChallenges() {
     return this.prisma.challenge.findMany({
@@ -74,12 +78,22 @@ export class ChallengesService {
       });
 
       if (isCompleted) {
-        await this.prisma.developerRating.updateMany({
-          where: { userId },
-          data: {
-            xp: { increment: challenge.xpReward },
-          },
-        });
+        if (this.xpService) {
+          await this.xpService.addXp({
+            userId,
+            amount: challenge.xpReward,
+            source: 'CHALLENGE_COMPLETE',
+            reason: `Completed challenge: ${challenge.title}`,
+          });
+        } else {
+          await this.prisma.developerRating.updateMany({
+            where: { userId },
+            data: {
+              gamificationXp: { increment: challenge.xpReward },
+              xp: { increment: challenge.xpReward },
+            },
+          });
+        }
 
         await this.prisma.notification.create({
           data: {

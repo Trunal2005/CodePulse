@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateBattleDto, UpdateBattleStatusDto } from './dto/battles.dto';
 import { SeasonResetService } from './season-reset.service';
+import { XpService } from '../xp/xp.service';
 import {
   placementKFactor,
   remainingPlacementsAfterMatch,
@@ -28,6 +29,7 @@ export class BattlesService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly seasonReset?: SeasonResetService,
+    @Optional() private readonly xpService?: XpService,
   ) {}
 
   /**
@@ -323,72 +325,6 @@ export class BattlesService {
           });
         }
 
-        // 1. Update Winner XP
-        let winnerXp = (winnerRatingRec?.xp || 0) + eloOutcome.winnerXpGain;
-        let winnerLevel = winnerRatingRec?.level || 1;
-        let winnerXpToNext = winnerRatingRec?.xpToNextLevel || 1000;
-        let leveledUp = false;
-
-        while (winnerXp >= winnerXpToNext) {
-          winnerLevel += 1;
-          winnerXp -= winnerXpToNext;
-          winnerXpToNext = Math.floor(winnerXpToNext * 1.5);
-          leveledUp = true;
-        }
-
-        await tx.developerRating.upsert({
-          where: { userId: winnerId },
-          create: {
-            userId: winnerId,
-            xp: winnerXp,
-            level: winnerLevel,
-            xpToNextLevel: winnerXpToNext,
-          },
-          update: {
-            xp: winnerXp,
-            level: winnerLevel,
-            xpToNextLevel: winnerXpToNext,
-          },
-        });
-
-        // 2. Update Loser participation XP
-        let loserXp = (loserRatingRec?.xp || 0) + eloOutcome.loserXpGain;
-        let loserLevel = loserRatingRec?.level || 1;
-        let loserXpToNext = loserRatingRec?.xpToNextLevel || 1000;
-
-        while (loserXp >= loserXpToNext) {
-          loserLevel += 1;
-          loserXp -= loserXpToNext;
-          loserXpToNext = Math.floor(loserXpToNext * 1.5);
-        }
-
-        await tx.developerRating.upsert({
-          where: { userId: loserId },
-          create: {
-            userId: loserId,
-            xp: loserXp,
-            level: loserLevel,
-            xpToNextLevel: loserXpToNext,
-          },
-          update: {
-            xp: loserXp,
-            level: loserLevel,
-            xpToNextLevel: loserXpToNext,
-          },
-        });
-
-        // 3. Record Level-Up Activity if winner achieved next tier
-        if (leveledUp) {
-          await tx.activity.create({
-            data: {
-              userId: winnerId,
-              type: 'LEVEL_UP',
-              title: `Reached Developer Level ${winnerLevel}!`,
-              description: `Leveled up after victory in DevBattle match!`,
-            },
-          });
-        }
-
         const winnerName =
           winnerId === battle.challengerId
             ? battle.challenger.username
@@ -397,6 +333,53 @@ export class BattlesService {
           loserId === battle.challengerId
             ? battle.challenger.username
             : battle.opponent.username;
+
+        if (this.xpService) {
+          await this.xpService.addXp(
+            {
+              userId: winnerId,
+              amount: eloOutcome.winnerXpGain,
+              source: 'BATTLE_WIN',
+              reason: `Won DevBattle match against ${loserName}`,
+            },
+            tx,
+          );
+          await this.xpService.addXp(
+            {
+              userId: loserId,
+              amount: eloOutcome.loserXpGain,
+              source: 'BATTLE_PARTICIPATION',
+              reason: `Completed DevBattle match against ${winnerName}`,
+            },
+            tx,
+          );
+        } else {
+          await tx.developerRating.upsert({
+            where: { userId: winnerId },
+            create: {
+              userId: winnerId,
+              gamificationXp: eloOutcome.winnerXpGain,
+              xp: eloOutcome.winnerXpGain,
+            },
+            update: {
+              gamificationXp: { increment: eloOutcome.winnerXpGain },
+              xp: { increment: eloOutcome.winnerXpGain },
+            },
+          });
+          await tx.developerRating.upsert({
+            where: { userId: loserId },
+            create: {
+              userId: loserId,
+              gamificationXp: eloOutcome.loserXpGain,
+              xp: eloOutcome.loserXpGain,
+            },
+            update: {
+              gamificationXp: { increment: eloOutcome.loserXpGain },
+              xp: { increment: eloOutcome.loserXpGain },
+            },
+          });
+        }
+
         await tx.activity.createMany({
           data: [
             {

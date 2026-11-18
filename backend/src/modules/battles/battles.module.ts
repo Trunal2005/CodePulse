@@ -8,9 +8,14 @@ import { RatingDecayService } from './rating-decay.service';
 import { RatingDecayWorker } from './rating-decay.worker';
 import { RatingDecayScheduler } from './rating-decay.scheduler';
 import { MetricsModule } from '../metrics/metrics.module';
+import { XpModule } from '../xp/xp.module';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: 'rating-decay' }), MetricsModule],
+  imports: [
+    BullModule.registerQueue({ name: 'rating-decay' }),
+    MetricsModule,
+    XpModule,
+  ],
   controllers: [BattlesController],
   providers: [
     BattlesService,

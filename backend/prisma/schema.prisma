@@ -96,6 +96,8 @@ model DeveloperRating {
   userId          String   @unique
   overall         Float    @default(0)
   level           Int      @default(1)
+  githubXp        Int      @default(0)
+  gamificationXp  Int      @default(0)
   xp              Int      @default(0)
   xpToNextLevel   Int      @default(100)
   rank            Int      @default(0)
@@ -107,6 +109,7 @@ model DeveloperRating {
 
   @@index([overall, tier])
   @@index([rank])
+  @@index([userId, xp(sort: Desc)])
   @@map("developer_ratings")
 }
 
